@@ -1,0 +1,99 @@
+const express = require('express');
+const bodyParser = require('body-parser');
+const axios = require('axios');
+const { TwitterApi } = require('twitter-api-v2');
+
+// Twitter API v2 credentials 
+const client = new TwitterApi({
+    appKey: 'TWITTER_API_KEY',  // API KEY
+    appSecret: 'TWITTER_API_SECRET_KEY',  //API SECRET KEY
+    accessToken: 'ACCESS_TOKEN_KEY',  //ACCESS TOKEN
+    accessSecret: 'ACCESS_TOKEN_SECRET_KEY' //ACCESS TOKEN SECRET
+});
+
+const app = express();
+const port = 5002;
+
+app.use(bodyParser.json());
+
+// Function to post a tweet using OAuth 2.0
+async function postTweet(tweet) {
+  console.log('Attempting to post tweet:', tweet);
+  try {
+      const response = await client.v2.tweet('statuses/update', { text: tweet });
+      console.log('Tweet posted successfully:', response.data);
+  } catch (error) {
+      console.error('Error posting tweet:', error.message, error.statusCode);
+  }
+}
+// Send a demo tweet and start the server
+app.listen(port, async () => {
+  console.log(`Server is running on http://localhost:${port}`);
+
+  try {
+    await postTweet('This is a demo tweet from Twitter bot!');
+  } catch (error) {
+    console.error('Error sending demo tweet:', error.message);
+  }
+});
+
+async function fetchDataAndTweet() {
+  try {
+    const response = await axios.get('https://api.etherscan.io/api', {
+      params: {
+        module: 'account',
+        action: 'tokentx',
+        contractaddress: 'TOKEN_ADDRESS',   // Token ADDRESS
+        startblock: '0',
+        endblock: '99999999',
+        sort: 'desc',  
+        page: 1,      
+        offset: 1,   
+        apikey: 'ETHERSCAN_API_KEY' // Your Etherscan API Key
+      }
+    });
+
+    console.log('Etherscan API response:', response.data);
+
+    if (response.status === 200 && response.data && response.data.result) {
+      const transactions = response.data.result;
+    
+      // Check all transactions
+      for (let tx of transactions) {
+        // Get the Tether value in decimal format
+        const tetherValue = parseInt(tx.value) / (10 ** tx.tokenDecimal);
+    
+        if (tetherValue > 20000) {
+          // Process the transaction and send the tweet
+          const sender = tx.from.slice(0, 6) + '...' + tx.from.slice(-3) + '...';
+          const receiver = tx.to.slice(0, 6) + '...' + tx.to.slice(-3) + '...';
+          const tokenName = 'Tether';
+          const transactionHash = tx.hash;
+          const formattedValue = `$${tetherValue.toFixed(6)}`;
+          const transactionUrl = `https://etherscan.io/tx/${transactionHash}`;
+
+          const tweet = `New Buyer Alert! ${sender} sent ${formattedValue} ${tokenName} to ${receiver}! in transaction ${transactionUrl}`;
+
+          console.log(tweet);
+          await postTweet(tweet);
+          break;  // Exit the loop after finding the first transaction over 20000
+        }
+      }
+    } else {
+      console.error('Invalid or missing data in the Etherscan API response');
+    }
+  } catch (error) {
+    console.error('Error fetching data:', error.message);
+  }
+}
+
+// Call fetchDataAndTweet once when the server starts
+fetchDataAndTweet();
+
+// Schedule to fetch data and tweet every 5 seconds
+setInterval(fetchDataAndTweet, 5000);
+
+// Define a route for the root URL
+app.get('/', (req, res) => {
+  res.send('Server is running.');
+});
